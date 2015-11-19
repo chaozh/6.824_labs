@@ -164,8 +164,8 @@ rpcc::cancel(void)
 {
   ScopedLock ml(&m_);
   printf("rpcc::cancel: force callers to fail\n");
-  std::map<int,caller*>::iterator iter;
-  for(iter = calls_.begin(); iter != calls_.end(); iter++){
+  //std::map<int,caller*>::iterator iter;
+  for(auto iter = calls_.begin(); iter != calls_.end(); iter++){
     caller *ca = iter->second;
 
     jsl_log(JSL_DBG_2, "rpcc::cancel: force caller to fail\n");
@@ -358,13 +358,13 @@ rpcc::got_pdu(connection *c, char *b, int sz)
 void 
 rpcc::update_xid_rep(unsigned int xid)
 {
-	std::list<unsigned int>::iterator it;
+	//std::list<unsigned int>::iterator it;
 
 	if(xid <= xid_rep_window_.front()){
 		return;
 	}
 
-	for (it = xid_rep_window_.begin(); it != xid_rep_window_.end(); it++){
+	for (auto it = xid_rep_window_.begin(); it != xid_rep_window_.end(); it++){
 		if(*it > xid){
 			xid_rep_window_.insert(it, xid);
 			goto compress;
@@ -373,7 +373,7 @@ rpcc::update_xid_rep(unsigned int xid)
 	xid_rep_window_.push_back(xid);
 
 compress:
-	it = xid_rep_window_.begin();
+	auto it = xid_rep_window_.begin();
 	for (it++; it != xid_rep_window_.end(); it++){
 		while (xid_rep_window_.front() + 1 == *it)
 			xid_rep_window_.pop_front();
@@ -446,18 +446,18 @@ rpcs::updatestat(unsigned int proc)
 	counts_[proc]++;
 	curr_counts_--;
 	if(curr_counts_ == 0){
-		std::map<int, int>::iterator i;
+		//std::map<int, int>::iterator i;
 		printf("RPC STATS: ");
-		for (i = counts_.begin(); i != counts_.end(); i++){
+		for (auto i = counts_.begin(); i != counts_.end(); i++){
 			printf("%x %d ", i->first, i->second);
 		}
 		printf("\n");
 
 		ScopedLock rwl(&reply_window_m_);
-		std::map<unsigned int,std::list<reply_t> >::iterator clt;
+		//std::map<unsigned int,std::list<reply_t> >::iterator clt;
 
 		unsigned int totalrep = 0, maxrep = 0;
-		for (clt = reply_window_.begin(); clt != reply_window_.end(); clt++){
+		for (auto clt = reply_window_.begin(); clt != reply_window_.end(); clt++){
 			totalrep += clt->second.size();
 			if(clt->second.size() > maxrep)
 				maxrep = clt->second.size();
@@ -621,8 +621,49 @@ rpcs::checkduplicate_and_update(unsigned int clt_nonce, unsigned int xid,
 		unsigned int xid_rep, char **b, int *sz)
 {
 	ScopedLock rwl(&reply_window_m_);
+    //check 
+	auto & clt_window = reply_window_[clt_nonce];
+	auto xid_it = clt_window.begin();
+	if(clt_window.size() > 0) {
+		//list find
+		//remove all sent reqs
+		if(xid_it->xid <= xid_rep){
+			for( ; xid_it != clt_window.end() && xid_it->xid <= xid_rep; ++xid_it){
+				if(!xid_it->cb_present || !xid_it->buf)
+					continue;
+				else
+					free(xid_it->buf);
+			}
+			xid_it = clt_window.erase(clt_window.begin(), xid_it);
+		}
+	}
 
-        // You fill this in for Lab 1.
+	reply_t r(xid);
+	r.cb_present = true;
+
+	if(xid_it != clt_window.end()){
+		if(xid_it->xid > xid) {
+			return FORGOTTEN;
+		} else {
+			//loop to check
+			for( ; xid_it != clt_window.end(); ++xid_it){
+				if(xid_it->xid == xid){
+					if(xid_it->cb_present) {
+						return INPROGRESS;
+					} else {
+						*b = xid_it->buf;
+						*sz = xid_it->sz;
+						return DONE;
+					}
+				} else if(xid_it->xid > xid){
+					//keep sequence
+					clt_window.insert(xid_it, r);
+					return NEW;
+				}
+			}
+		}
+	}
+	clt_window.push_back(r);
 	return NEW;
 }
 
@@ -636,18 +677,28 @@ rpcs::add_reply(unsigned int clt_nonce, unsigned int xid,
 		char *b, int sz)
 {
 	ScopedLock rwl(&reply_window_m_);
-        // You fill this in for Lab 1.
+	
+    auto & clt_window = reply_window_[clt_nonce];
+    assert(clt_window.size() > 0);
+    for(auto xid_it = clt_window.begin(); xid_it != clt_window.end(); ++xid_it) {
+        if(xid_it->xid == xid){
+    	    xid_it->buf = b;
+    	    xid_it->sz = sz;
+    	    xid_it->cb_present = false;
+        }
+    }
+
 }
 
 void
 rpcs::free_reply_window(void)
 {
-	std::map<unsigned int,std::list<reply_t> >::iterator clt;
-	std::list<reply_t>::iterator it;
+	//std::map<unsigned int,std::list<reply_t> >::iterator clt;
+	//std::list<reply_t>::iterator it;
 
 	ScopedLock rwl(&reply_window_m_);
-	for (clt = reply_window_.begin(); clt != reply_window_.end(); clt++){
-		for (it = clt->second.begin(); it != clt->second.end(); it++){
+	for (auto clt = reply_window_.begin(); clt != reply_window_.end(); clt++){
+		for (auto it = clt->second.begin(); it != clt->second.end(); it++){
 			free((*it).buf);
 		}
 		clt->second.clear();

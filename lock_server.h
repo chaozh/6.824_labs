@@ -9,15 +9,26 @@
 #include "lock_client.h"
 #include "rpc.h"
 
+class lock_status {
+ public:
+    int clt;
+	pthread_cond_t cond;
+};
+
 class lock_server {
 
  protected:
   int nacquire;
+  pthread_mutex_t server_mutex;
+  std::map<lock_protocol::lockid_t, lock_status> locks;
 
  public:
   lock_server();
   ~lock_server() {};
   lock_protocol::status stat(int clt, lock_protocol::lockid_t lid, int &);
+  //
+  lock_protocol::status acquire(int clt, lock_protocol::lockid_t lid, int &);
+  lock_protocol::status release(int clt, lock_protocol::lockid_t lid, int &);
 };
 
 #endif 
